@@ -1,0 +1,41 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environment
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Data files
+data/raw/*
+data/processed/*
+data/reports/*
+
+# Keep folder structure
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/reports/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Airflow local files
+airflow_home/
+.airflow/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
