@@ -1,13 +1,18 @@
 import polars as pl
 from config.config import RUTAS
 
+
 def consolidar():
     try:
-        train = pl.read_parquet(RUTAS['processed'] / "train_limpio.parquet")
-        stores = pl.read_parquet(RUTAS['processed'] / "stores_limpio.parquet")
-        oil = pl.read_parquet(RUTAS['processed'] / "oil_limpio.parquet")
-        holidays = pl.read_parquet(RUTAS['processed'] / "holidays_events_limpio.parquet")
-        transactions = pl.read_parquet(RUTAS['processed'] / "transactions_limpio.parquet")
+        train = pl.read_parquet(RUTAS["processed"] / "train_limpio.parquet")
+        stores = pl.read_parquet(RUTAS["processed"] / "stores_limpio.parquet")
+        oil = pl.read_parquet(RUTAS["processed"] / "oil_limpio.parquet")
+        holidays = pl.read_parquet(
+            RUTAS["processed"] / "holidays_events_limpio.parquet"
+        )
+        transactions = pl.read_parquet(
+            RUTAS["processed"] / "transactions_limpio.parquet"
+        )
     except Exception as e:
         print(f"Error al cargar archivos: {e}")
         print("Se necesita ejecutar primero limpiar_datos.py")
@@ -19,61 +24,43 @@ def consolidar():
     print(f"holidays_events: {holidays.height:,} filas ")
     print(f"transactions: {transactions.height:,} filas ")
 
-    print("\nHOLIDAY_EVENTS_AGRUPADO")
+    # REVISIÓN DE DUPLCIADOS
 
-    holidays_agrupado = (holidays.group_by("date").agg(pl.len().alias("cantidad_eventos"),
-                                                       pl.col("type").unique().sort().str.join(", ").alias("tipos_evento"),
-                                                       pl.col("locale").unique().sort().str.join(", ").alias("locales_evento"),
-                                                       pl.col("description").unique().sort().str.join(", ").alias("descripciones_evento"),
-                                                       pl.col("transferred").any().alias("evento_transferido")
-                                                       ).with_columns(pl.lit(True).alias("es_feriado_evento"))
-                         )
-    print("holidays agrupado: ")
-    print(f"{holidays_agrupado.height:,} fechas únicas")
+    fechas_duplicadas = (
+        holidays.group_by("date")
+        .len()
+        .filter(pl.col("len") > 1)
+        .sort("len", descending=True)
+    )
 
-    print("\nJOIN DE TABLAS")
+    print("\nFechas con más de un registro en holidays_events:")
+    print(fechas_duplicadas)
 
-    df = (train
-          .join(stores, on="store_nbr", how="left")
-          .join(transactions, on=["store_nbr", "date"], how="left")
-          .join(oil, on="date", how="left")
-          .join(holidays_agrupado, on="date", how="left", validate="m:1")
-          .with_columns(
-                  pl.col("transactions").fill_null(0),
-                  pl.col("cantidad_eventos").fill_null(0),
-                  pl.col("es_feriado_evento").fill_null(False),
-                  pl.col("evento_transferido").fill_null(False)
-                  )
-          )
+    cantidad_fechas_duplicadas = fechas_duplicadas.height
 
-    print(f"Consolidado: {df.height:,} filas, ")
-    print(f"{df.width} columnas")
+    print("Cantidad de fechas con múltiples eventos: ")
+    print(f"{cantidad_fechas_duplicadas}")
 
-    if df.height != train.height:
-        print("\nERROR EN LA CONSOLIDACIÓN")
-        print(f"Train: {train.height:,} filas")
-        print(f"Consolidado: {df.height:,} filas")
-        print("La cantidad de filas cambió durante los joins.")
-        return None
+    impacto_fechas = (
+        fechas_duplicadas.join(
+            train.group_by("date").len().rename({"len": "filas_train"}),
+            on="date",
+            how="left",
+        )
+        .with_columns(
+            (pl.col("filas_train") * (pl.col("len") - 1)).alias("filas_adicionales")
+        )
+        .sort("filas_adicionales", descending=True)
+    )
 
-    print("\nCantidad de filas validada correctamente")
+    print("\nImpacto de las fechas duplicadas:")
+    print(impacto_fechas)
 
-    print(f"Consolidado: {df.height:,} filas, {df.width} columnas")
+    print("\nTotal de filas adicionales esperadas:")
+    print(impacto_fechas["filas_adicionales"].sum())
 
-    print("\nGUARDANDO DATOS CONSOLIDADOS")
-
-    RUTAS['processed'].mkdir(parents=True, exist_ok=True)
-    archivo_salida = RUTAS['processed'] / "consolidado.parquet"
-    df.write_parquet(archivo_salida)
-
-    tamanio_mb = archivo_salida.stat().st_size / (1024 * 1024)
-
-    print(f"Tamaño del archivo : {tamanio_mb:.2f} MB")
-    print(f"Archivo guardado en : {archivo_salida}")
-
-    return df
+    return None
 
 
 if __name__ == "__main__":
     consolidar()
-
