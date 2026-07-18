@@ -33,7 +33,7 @@ https://www.kaggle.com/competitions/store-sales-time-series-forecasting
 
 ## 3. Diagrama de arquitectura de la solución
 
-> Pendiente de elaboración.
+![Arquitectura del pipeline](docs/img/arquitectura.PNG)
 
 ---
 
