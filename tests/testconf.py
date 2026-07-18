@@ -1,3 +1,4 @@
-from config.config import BASE_DATOS
+from config.config import RUTAS
 
-print(f"HOST: {BASE_DATOS['host']}")
+# print(f"HOST: {BASE_DATOS['host']}")
+print(f"RUTA (raw) {RUTAS['raw']}")

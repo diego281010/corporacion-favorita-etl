@@ -19,16 +19,48 @@ def consolidar():
     print(f"holidays_events: {holidays.height:,} filas ")
     print(f"transactions: {transactions.height:,} filas ")
 
-    print("\n UNION DE TABLAS")
+    print("\nHOLIDAY_EVENTS_AGRUPADO")
+
+    holidays_agrupado = (holidays.group_by("date").agg(pl.len().alias("cantidad_eventos"),
+                                                       pl.col("type").unique().sort().str.join(", ").alias("tipos_evento"),
+                                                       pl.col("locale").unique().sort().str.join(", ").alias("locales_evento"),
+                                                       pl.col("description").unique().sort().str.join(", ").alias("descripciones_evento"),
+                                                       pl.col("transferred").any().alias("evento_transferido")
+                                                       ).with_columns(pl.lit(True).alias("es_feriado_evento"))
+                         )
+    print("holidays agrupado: ")
+    print(f"{holidays_agrupado.height:,} fechas únicas")
+
+    print("\nJOIN DE TABLAS")
 
     df = (train
           .join(stores, on="store_nbr", how="left")
           .join(transactions, on=["store_nbr", "date"], how="left")
           .join(oil, on="date", how="left")
-          .join(holidays, on="date", how="left"))
+          .join(holidays_agrupado, on="date", how="left", validate="m:1")
+          .with_columns(
+                  pl.col("transactions").fill_null(0),
+                  pl.col("cantidad_eventos").fill_null(0),
+                  pl.col("es_feriado_evento").fill_null(False),
+                  pl.col("evento_transferido").fill_null(False)
+                  )
+          )
+
+    print(f"Consolidado: {df.height:,} filas, ")
+    print(f"{df.width} columnas")
+
+    if df.height != train.height:
+        print("\nERROR EN LA CONSOLIDACIÓN")
+        print(f"Train: {train.height:,} filas")
+        print(f"Consolidado: {df.height:,} filas")
+        print("La cantidad de filas cambió durante los joins.")
+        return None
+
+    print("\nCantidad de filas validada correctamente")
+
     print(f"Consolidado: {df.height:,} filas, {df.width} columnas")
 
-    print(f"GUARDANDO DATOS CONSOLIDADOS")
+    print("\nGUARDANDO DATOS CONSOLIDADOS")
 
     RUTAS['processed'].mkdir(parents=True, exist_ok=True)
     archivo_salida = RUTAS['processed'] / "consolidado.parquet"
@@ -44,5 +76,4 @@ def consolidar():
 
 if __name__ == "__main__":
     consolidar()
-
 
