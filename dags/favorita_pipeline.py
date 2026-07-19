@@ -31,6 +31,7 @@ from scripts.eda.transacciones import ejecutar_transacciones
 from scripts.eda.ventas_generales import ejecutar_ventas_generales
 from scripts.extract.cargar_datos import ejecutar_carga
 from scripts.transform.limpiar_datos import ejecutar_limpieza
+from scripts.load.exportar_postgres import ejecutar_exportacion_postgres
 
 
 def registrar_error(context):
@@ -111,3 +112,10 @@ with DAG(
             do_xcom_push=False,
         )
     fin_eda = EmptyOperator(task_id="fin_eda_profundo")
+    exportar_postgres = PythonOperator(
+            task_id="exportar_postgres",
+            python_callable=ejecutar_exportacion_postgres,
+            do_xcom_push=False,
+            )
+
+    inicio >> cargar >> eda_inicial >> limpiar >> consolidar >> eda_profundo >> fin_eda >> exportar_postgres

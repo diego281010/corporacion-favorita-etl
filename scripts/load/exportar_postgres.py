@@ -13,20 +13,23 @@ from config.config import RUTAS
 
 try:
     from config.config import construir_url_base_datos
-except:
+except ImportError:
     construir_url_base_datos = None
 
 try:
     from config.config import URL_BASE_DATOS
-except:
+except ImportError:
     URL_BASE_DATOS = None
+
 
 RUTA_EDA = RUTAS.get(
     "eda_profundo",
     RUTAS["processed"] / "eda_profundo",
 )
 
-RUTA_METRICAS = RUTAS["processed"] / "exportacion_postgres_metricas.json"
+RUTA_METRICAS = (
+    RUTAS["processed"] / "exportacion_postgres_metricas.json"
+)
 
 ESQUEMA_POSTGRES = os.getenv("DB_SCHEMA", "public")
 TAMANIO_LOTE = int(os.getenv("DB_CHUNK_SIZE", "50000"))
@@ -39,14 +42,22 @@ TABLAS_PARQUET = {
     "ventas_por_provincia": RUTA_EDA / "ventas_por_provincia.parquet",
     "ventas_por_anio": RUTA_EDA / "ventas_por_anio.parquet",
     "ventas_por_mes": RUTA_EDA / "ventas_por_mes.parquet",
-    "feriados_vs_dias_normales": (RUTA_EDA / "feriados_vs_dias_normales.parquet"),
-    "feriados_ventana_tres_dias": (RUTA_EDA / "feriados_ventana_tres_dias.parquet"),
+    "feriados_vs_dias_normales": (
+        RUTA_EDA / "feriados_vs_dias_normales.parquet"
+    ),
+    "feriados_ventana_tres_dias": (
+        RUTA_EDA / "feriados_ventana_tres_dias.parquet"
+    ),
     "feriados_sensibilidad_familias": (
         RUTA_EDA / "feriados_sensibilidad_familias.parquet"
     ),
     "promociones_general": RUTA_EDA / "promociones_general.parquet",
-    "promociones_por_familia": (RUTA_EDA / "promociones_por_familia.parquet"),
-    "petroleo_ventas_mensuales": (RUTA_EDA / "petroleo_ventas_mensuales.parquet"),
+    "promociones_por_familia": (
+        RUTA_EDA / "promociones_por_familia.parquet"
+    ),
+    "petroleo_ventas_mensuales": (
+        RUTA_EDA / "petroleo_ventas_mensuales.parquet"
+    ),
     "petroleo_variaciones_2015_2016": (
         RUTA_EDA / "petroleo_variaciones_2015_2016.parquet"
     ),
@@ -54,8 +65,12 @@ TABLAS_PARQUET = {
     "petroleo_sensibilidad_ciudades": (
         RUTA_EDA / "petroleo_sensibilidad_ciudades.parquet"
     ),
-    "transacciones_ventas_diarias": (RUTA_EDA / "transacciones_ventas_diarias.parquet"),
-    "transacciones_por_tienda": (RUTA_EDA / "transacciones_por_tienda.parquet"),
+    "transacciones_ventas_diarias": (
+        RUTA_EDA / "transacciones_ventas_diarias.parquet"
+    ),
+    "transacciones_por_tienda": (
+        RUTA_EDA / "transacciones_por_tienda.parquet"
+    ),
     "transacciones_clasificacion_ticket": (
         RUTA_EDA / "transacciones_clasificacion_ticket.parquet"
     ),
@@ -67,9 +82,9 @@ INDICES = {
         ("store_nbr",),
         ("family",),
     ],
-    "ventas_por_tienda": [("store_nbr")],
+    "ventas_por_tienda": [("store_nbr",)],
     "ventas_por_mes": [("anio", "mes")],
-    feriados_ventana_tres_dias: [
+    "feriados_ventana_tres_dias": [
         ("family",),
         ("dias_relativo_feriado",),
     ],
@@ -88,7 +103,8 @@ def obtener_url_base_datos():
         return URL_BASE_DATOS
 
     raise RuntimeError(
-        "No se encontró construir url_base_datos() ni URL_BASE_DATOS en config/config.py"
+        "No se encontró construir_url_base_datos() ni URL_BASE_DATOS "
+        "en config/config.py"
     )
 
 
@@ -98,13 +114,14 @@ def validar_identificador(nombre):
 
 
 def citar_identificador(nombre):
-    validar_identificaro(nombre)
+    validar_identificador(nombre)
     return f'"{nombre}"'
 
 
 def nombre_tabla_completo(nombre_tabla):
     return (
-        f"{citar_identificador(ESQUEMA_POSTGRES)}.{citar_identificador(nombre_tabla)}"
+        f"{citar_identificador(ESQUEMA_POSTGRES)}."
+        f"{citar_identificador(nombre_tabla)}"
     )
 
 
@@ -162,7 +179,9 @@ def tipo_postgres(tipo_polars):
     if nombre == "Null":
         return "TEXT"
 
-    raise TypeError(f"No existe una conversión PostgreSQL para el tipo Polars {nombre}")
+    raise TypeError(
+        f"No existe una conversión PostgreSQL para el tipo Polars {nombre}"
+    )
 
 
 def obtener_esquema_parquet(ruta):
@@ -205,6 +224,14 @@ def iterar_lotes_parquet(ruta, cantidad_filas):
                 yield lote
         return
 
+    for inicio in range(0, cantidad_filas, TAMANIO_LOTE):
+        lote = recolectar_lazy(
+            pl.scan_parquet(ruta).slice(inicio, TAMANIO_LOTE)
+        )
+
+        if lote.height > 0:
+            yield lote
+
 
 def construir_create_table(nombre_tabla, esquema):
     columnas = []
@@ -214,13 +241,16 @@ def construir_create_table(nombre_tabla, esquema):
         columnas.append(f"{columna} {tipo_postgres(tipo)}")
 
     columnas_sql = ",\n    ".join(columnas)
+    tabla = nombre_tabla_completo(nombre_tabla)
 
     return f"CREATE TABLE {tabla} (\n    {columnas_sql}\n)"
 
 
-def copiar_lote(cursos, nombre_tabla, lote):
+def copiar_lote(cursor, nombre_tabla, lote):
     columnas = lote.columns
-    columnas_sql = ", ".join(citar_identificador(columna) for columna in columnas)
+    columnas_sql = ", ".join(
+        citar_identificador(columna) for columna in columnas
+    )
     tabla = nombre_tabla_completo(nombre_tabla)
 
     buffer = io.StringIO()
@@ -232,7 +262,8 @@ def copiar_lote(cursos, nombre_tabla, lote):
     buffer.seek(0)
 
     consulta_copy = (
-        f"COPY {tabla} ({columnas_sql})FROM STDIN WITH(FORMAT CSV, NULL '\\N')"
+        f"COPY {tabla} ({columnas_sql}) "
+        "FROM STDIN WITH (FORMAT CSV, NULL '\\N')"
     )
     cursor.copy_expert(consulta_copy, buffer)
 
@@ -248,7 +279,8 @@ def crear_indices(cursor, nombre_tabla, columnas_tabla):
         sufijo = "_".join(columnas_indice)
         nombre_indice = f"idx_{nombre_tabla}_{sufijo}"
         columnas_sql = ", ".join(
-            citar_identificador(columna) for columna in columnas_indice
+            citar_identificador(columna)
+            for columna in columnas_indice
         )
 
         cursor.execute(
@@ -268,9 +300,13 @@ def exportar_tabla(engine, nombre_tabla, ruta_parquet):
 
     try:
         cursor.execute(
-            f"CREATE SCHEMA IF NOT EXISTS {citar_identificador(ESQUEMA_POSTGRES)}"
+            f"CREATE SCHEMA IF NOT EXISTS "
+            f"{citar_identificador(ESQUEMA_POSTGRES)}"
         )
-        cursor.execute(f"DROP TABLE IF EXISTS {nombre_tabla_completo(nombre_tabla)}")
+        cursor.execute(
+            f"DROP TABLE IF EXISTS "
+            f"{nombre_tabla_completo(nombre_tabla)}"
+        )
         cursor.execute(construir_create_table(nombre_tabla, esquema))
 
         filas_copiadas = 0
@@ -311,7 +347,9 @@ def exportar_tabla(engine, nombre_tabla, ruta_parquet):
 
 def validar_archivos_salida():
     faltantes = [
-        str(ruta) for ruta in TABLAS_PARQUET.values() if not Path(ruta).exists()
+        str(ruta)
+        for ruta in TABLAS_PARQUET.values()
+        if not Path(ruta).exists()
     ]
 
     if faltantes:
@@ -386,7 +424,9 @@ def exportar_postgres():
         "fecha_exportacion_utc": datetime.now(timezone.utc).isoformat(),
         "esquema": ESQUEMA_POSTGRES,
         "cantidad_tablas": len(tablas_exportadas),
-        "total_filas": sum(tabla["filas"] for tabla in tablas_exportadas),
+        "total_filas": sum(
+            tabla["filas"] for tabla in tablas_exportadas
+        ),
         "duracion_total_segundos": round(
             time.perf_counter() - inicio_total,
             2,
@@ -399,7 +439,10 @@ def exportar_postgres():
     print("\nEXPORTACIÓN FINALIZADA")
     print(f"Tablas creadas: {metricas['cantidad_tablas']}")
     print(f"Filas exportadas: {metricas['total_filas']:,}")
-    print(f"Duración total: {metricas['duracion_total_segundos']:.2f} segundos")
+    print(
+        "Duración total: "
+        f"{metricas['duracion_total_segundos']:.2f} segundos"
+    )
     print(f"Métricas guardadas en: {RUTA_METRICAS}")
 
     return metricas
@@ -411,3 +454,4 @@ def ejecutar_exportacion_postgres():
 
 if __name__ == "__main__":
     ejecutar_exportacion_postgres()
+
