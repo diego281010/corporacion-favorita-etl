@@ -8,6 +8,7 @@ RUTA_ENV = RUTA_RAIZ / ".env"
 
 load_dotenv(RUTA_ENV)
 
+
 def obtener_variable_entorno(env):
     variable = os.getenv(env)
     if variable:
@@ -15,18 +16,21 @@ def obtener_variable_entorno(env):
 
     raise RuntimeError(f"La variable {env} no está definida en el archivo .env")
 
+
 BASE_DATOS = {
-    "host" : obtener_variable_entorno("DB_HOST"),
-    "puerto" : obtener_variable_entorno("DB_PORT"),
-    "nombre" : obtener_variable_entorno("DB_NAME"),
-    "usuario" : obtener_variable_entorno("DB_USER"),
-    "password" : obtener_variable_entorno("DB_PASSWORD")
+    "host": obtener_variable_entorno("DB_HOST"),
+    "puerto": obtener_variable_entorno("DB_PORT"),
+    "nombre": obtener_variable_entorno("DB_NAME"),
+    "usuario": obtener_variable_entorno("DB_USER"),
+    "password": obtener_variable_entorno("DB_PASSWORD"),
 }
 
 RUTAS = {
-    "raiz" : RUTA_RAIZ,
-    "raw" : RUTA_RAIZ / "data" / "raw",
-    "processed" : RUTA_RAIZ / "data" / "processed"
+    "raiz": RUTA_RAIZ,
+    "raw": RUTA_RAIZ / "data" / "raw",
+    "processed": RUTA_RAIZ / "data" / "processed",
+    "eda_profundo": RUTA_RAIZ / "data" / "processed" / "eda_profundo",
+    "reports": RUTA_RAIZ / "data" / "reports",
 }
 
 URL_BASE_DATOS = (
