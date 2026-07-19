@@ -39,7 +39,35 @@ https://www.kaggle.com/competitions/store-sales-time-series-forecasting
 
 ## 4. Descripción del DAG
 
-> Pendiente de implementación
+**Nombre del DAG:** `favorita_pipeline` (`dags/favorita_pipeline.py`, Airflow 3.3.0)
+
+| Tarea | Tipo | Función que ejecuta |
+|---|---|---|
+| `inicio` | EmptyOperator | Marca el arranque del DAG |
+| `cargar_datos` | PythonOperator | `ejecutar_carga` — lee los 5 CSV con Polars |
+| `eda_inicial` | PythonOperator | `ejecutar_eda_inicial` — diagnóstico de calidad inicial |
+| `limpiar_datos` | PythonOperator | `ejecutar_limpieza` — limpieza y estandarización |
+| `consolidar` | PythonOperator | `ejecutar_consolidacion` — une los 5 datasets |
+| `eda_profundo` *(TaskGroup)* | — | Agrupa los 5 análisis de EDA profundo (abajo) |
+| ├─ `ventas_generales` | PythonOperator | `ejecutar_ventas_generales` |
+| ├─ `estacionalidad_feriados` | PythonOperator | `ejecutar_feriados` |
+| ├─ `promociones` | PythonOperator | `ejecutar_promociones` |
+| ├─ `petroleo_economia` | PythonOperator | `ejecutar_petroleo` |
+| └─ `transacciones` | PythonOperator | `ejecutar_transacciones` |
+| `fin_eda_profundo` | EmptyOperator | Marca el cierre del grupo de EDA profundo |
+
+**Configuración:**
+
+| Parámetro | Valor |
+|---|---|
+| `schedule` | `None` (disparo manual) |
+| `start_date` | 2026-07-05 (`America/Guayaquil`) |
+| `catchup` | `False` |
+| `max_active_runs` / `max_active_tasks` | 1 / 1 |
+| `retries` | 1 por tarea |
+| `retry_delay` | 5 minutos |
+| `on_failure_callback` | `registrar_error` — registra la tarea y la excepción en el log |
+| `tags` | `favorita`, `etl`, `polars`, `eda` |
 
 ---
 
@@ -121,6 +149,24 @@ No se modificó la configuración por defecto de redes. En Administración se ha
 **Paso 10: Revisar y crear**
 Se revisan todas las especificaciones configuradas antes de confirmar la creación de la máquina virtual.
 ![Revisión final](docs/img/Paso10.png)
+
+### 8.1 Instalación y arranque de Airflow
+
+Una vez creada la VM y con acceso por SSH, se instala Airflow dentro de un entorno virtual usando los scripts de `scripts/setup/`:
+
+```bash
+# 1. Crear y activar el entorno virtual del proyecto
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Instalar dependencias del proyecto + Airflow 3.3.0 (usa el archivo de constraints oficial)
+scripts/setup/instalar_airflow.sh
+
+# 3. Levantar Airflow en modo standalone (webserver + scheduler)
+scripts/setup/iniciar_airflow.sh
+```
+
+`iniciar_airflow.sh` configura `AIRFLOW_HOME` dentro del proyecto y apunta `AIRFLOW__CORE__DAGS_FOLDER` a la carpeta `dags/` del repo, para que Airflow detecte automáticamente `favorita_pipeline`.
 ---
 
 ## 9. Conclusiones y recomendaciones
