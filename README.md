@@ -63,8 +63,64 @@ https://www.kaggle.com/competitions/store-sales-time-series-forecasting
 
 ## 8. Despliegue
 
->
+La VM se desplegó en el [portal de Azure](https://portal.azure.com/#home) usando la cuenta institucional EPN, acogiéndose al programa **Microsoft Azure for Students** ($100 en créditos, sin tarjeta de crédito).
 
+**Paso 1: Ingresar a Azure y buscar "Máquinas virtuales"**
+Se inicia sesión con la cuenta institucional y se busca la opción de Máquinas virtuales en el portal.
+
+![Ingresar a máquinas virtuales](docs/img/Paso1.PNG)
+
+**Paso 2: Activar la cuenta de estudiante**
+Se selecciona la opción **Microsoft Azure for Students**, detectada automáticamente por el dominio institucional del correo.
+
+![Microsoft Azure for Students](docs/img/Paso2.PNG)
+
+**Paso 3: Iniciar gratis con la cuenta institucional**
+Se confirma el inicio del proceso de activación con la cuenta EPN.
+
+![Iniciar gratis - parte 1](docs/img/Paso3_a.png)
+![Iniciar gratis - parte 2](docs/img/Paso3_b.png)
+
+**Paso 4: Completar y verificar la cuenta**
+Se llenan los campos requeridos (datos personales, verificación telefónica) para activar el crédito de estudiante.
+
+![Verificar cuenta](docs/img/Paso4.png)
+
+**Paso 5: Volver a Máquinas virtuales**
+Ya con la suscripción activa, se regresa a la sección de Máquinas virtuales para crear el recurso.
+
+![Volver a máquinas virtuales](docs/img/Paso5.PNG)
+
+**Paso 6: Crear la máquina virtual**
+Se selecciona **Crear → Máquina virtual**.
+
+![Crear máquina virtual](docs/img/Paso6.png)
+
+**Paso 7: Datos básicos**
+Se configura el grupo de recursos, el nombre de la VM, la región, la imagen (**Ubuntu**) y el tamaño de la instancia, junto con la cuenta de administrador y las reglas de puerto de entrada (SSH).
+
+![Datos básicos 1](docs/img/Paso7_a.png)
+![Datos básicos 2](docs/img/Paso7_b.png)
+![Datos básicos 3](docs/img/Paso7_c.png)
+![Datos básicos 4](docs/img/Paso7_d.png)
+
+**Paso 8: Discos**
+No se modificó la configuración por defecto de discos.
+
+![Discos 1](docs/img/Paso8_a.png)
+![Discos 2](docs/img/Paso8_b.png)
+
+**Paso 9: Redes y administración**
+No se modificó la configuración por defecto de redes. En Administración se habilitó el **apagado automático** de la VM, para evitar consumir el crédito de Azure fuera del horario de uso del equipo.
+
+![Redes 1](docs/img/Paso9_a.png)
+![Redes 2](docs/img/Paso9_b.png)
+![Administración 1](docs/img/Paso9_c.png)
+![Administración 2](docs/img/Paso9_d.png)
+
+**Paso 10: Revisar y crear**
+Se revisan todas las especificaciones configuradas antes de confirmar la creación de la máquina virtual.
+![Revisión final](docs/img/Paso10.png)
 ---
 
 ## 9. Conclusiones y recomendaciones
