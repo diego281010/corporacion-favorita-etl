@@ -1,16 +1,33 @@
-import polars as pl
 from datetime import timedelta
+
+import polars as pl
+
 from config.config import RUTAS
 
+INPUT_DIR = RUTAS["processed"]
+OUTPUT_DIR = RUTAS["eda_profundo"]
 
-def analisis_feriados():
 
-    df = pl.read_parquet(RUTAS["processed"] / "consolidado.parquet")
+def cargar_consolidado():
+    archivo = INPUT_DIR / "consolidado.parquet"
+    if not archivo.exists():
+        raise FileNotFoundError(
+            f"No existe el archivo consolidado: {archivo}. "
+            "Ejecuta primero la tarea consolidar."
+        )
+    return pl.read_parquet(archivo)
 
-    resultados = {}
 
-    print("ESTACIONALIDAD Y FERIADOS")
-    print("-" * 60)
+def guardar_resultado(df, nombre_archivo):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    archivo_salida = OUTPUT_DIR / nombre_archivo
+    df.write_parquet(archivo_salida)
+    return archivo_salida
+
+
+def analisis_feriados(df=None):
+    if df is None:
+        df = cargar_consolidado()
 
     columnas_necesarias = [
         "date",
@@ -18,25 +35,36 @@ def analisis_feriados():
         "sales",
         "es_feriado_nacional",
     ]
-
     columnas_faltantes = [
         columna for columna in columnas_necesarias if columna not in df.columns
     ]
-
     if columnas_faltantes:
-        print("No se puede realizar el análisis. ")
-        print(f"Faltan las columnas: {columnas_faltantes}")
-        return resultados
+        raise ValueError(
+            "No se puede realizar el análisis de feriados. "
+            f"Faltan las columnas: {columnas_faltantes}"
+        )
 
     df_feriados = df.with_columns(pl.col("es_feriado_nacional").fill_null(False))
 
-    # 2.1 Impacto de feriados
+    fechas_feriado = (
+        df_feriados.filter(pl.col("es_feriado_nacional"))
+        .select("date")
+        .unique()
+        .sort("date")
+        .to_series()
+        .to_list()
+    )
+    if not fechas_feriado:
+        raise ValueError("No se encontraron feriados nacionales en el consolidado.")
 
-    print("\nImpacto de feriados nacionales")
+    print("ESTACIONALIDAD Y FERIADOS")
     print("-" * 60)
 
-    ventas_diarias = df_feriados.group_by(["date", "es_feriado_nacional"]).agg(
-        pl.col("sales").sum().alias("ventas_diarias")
+    # 2.1 Impacto general: primero se calcula el volumen total de cada fecha.
+    ventas_diarias = (
+        df_feriados.group_by(["date", "es_feriado_nacional"])
+        .agg(pl.col("sales").sum().alias("ventas_diarias"))
+        .sort("date")
     )
 
     ventas_feriado_normal = (
@@ -52,63 +80,37 @@ def analisis_feriados():
         .sort("es_feriado_nacional", descending=True)
     )
 
+    print("\n2.1 IMPACTO DE FERIADOS NACIONALES")
     for row in ventas_feriado_normal.iter_rows(named=True):
-        tipo_dia = "Feriado nacional" if row["es_feriado_nacional"] else "Día normal"
-        print(f"{tipo_dia}:")
-        print("Ventas totales: ")
-        print(f"${row['ventas_totales']:,.2f}")
-
-        print("Venta promedio por registro: ")
-        print(f"${row['venta_promedio_diaria']:,.2f}")
-
-        print("Cantidad de días: ")
-        print(f"{row['cantidad_dias']:,}")
-
-    comparacion_feriados = ventas_feriado_normal.select(
-        ["es_feriado_nacional", "venta_promedio_diaria"]
-    )
-    venta_promedio_feriado = (
-        comparacion_feriados.filter(pl.col("es_feriado_nacional"))
-        .select("venta_promedio_diaria")
-        .to_series()
-    )
-
-    venta_promedio_normal = (
-        comparacion_feriados.filter(~pl.col("es_feriado_nacional"))
-        .select("venta_promedio_diaria")
-        .to_series()
-    )
-
-    if (
-        len(venta_promedio_feriado) > 0
-        and len(venta_promedio_normal) > 0
-        and venta_promedio_normal[0] != 0
-    ):
-        cambio_porcentual_general = (
-            (venta_promedio_feriado[0] - venta_promedio_normal[0])
-            / venta_promedio_normal[0]
-            * 100
+        tipo = "Feriado nacional" if row["es_feriado_nacional"] else "Día normal"
+        print(
+            f"{tipo}: promedio diario {row['venta_promedio_diaria']:,.2f}; "
+            f"mediana diaria {row['venta_mediana_diaria']:,.2f}; "
+            f"días {row['cantidad_dias']:,}"
         )
 
-        print("\nCambio de ventas promedio en feriados: ")
-        print(f"{cambio_porcentual_general:+.2f}%")
+    promedio_feriado = ventas_feriado_normal.filter(
+        pl.col("es_feriado_nacional")
+    ).get_column("venta_promedio_diaria")
+    promedio_normal = ventas_feriado_normal.filter(
+        ~pl.col("es_feriado_nacional")
+    ).get_column("venta_promedio_diaria")
 
-        resultados["cambio_porcentual_general"] = cambio_porcentual_general
+    cambio_porcentual_general = None
+    if (
+        len(promedio_feriado) > 0
+        and len(promedio_normal) > 0
+        and promedio_normal[0] != 0
+    ):
+        cambio_porcentual_general = (
+            (promedio_feriado[0] - promedio_normal[0]) / promedio_normal[0] * 100
+        )
+        print(
+            "Cambio del volumen promedio diario en feriados: "
+            f"{cambio_porcentual_general:+.2f}%"
+        )
 
-    resultados["ventas_feriado_vs_normal"] = ventas_feriado_normal.to_dicts()
-
-    # 2.2 Ventanas de feriados
-    print("\n2.2 VENTAS 3 DIAS ANTES/DESPUES")
-    print("-" * 60)
-    fechas_feriado = (
-        df_feriados.filter(pl.col("es_feriado_nacional"))
-        .select("date")
-        .unique()
-        .sort("date")
-        .to_series()
-        .to_list()
-    )
-
+    # 2.2 Ventana alrededor de cada feriado.
     filas_ventana = []
     for fecha_feriado in fechas_feriado:
         for dias_relativos in [-3, -2, -1, 1, 2, 3]:
@@ -120,82 +122,79 @@ def analisis_feriados():
                 }
             )
 
-    if filas_ventana:
-        ventana_feriados = pl.DataFrame(filas_ventana)
+    ventana_feriados = pl.DataFrame(filas_ventana)
 
-        ventas_dias_cercanos = (
-            df_feriados.join(ventana_feriados, on="date", how="inner")
-            .group_by(["family", "dias_relativo_feriado"])
-            .agg(
-                [
-                    pl.col("sales").sum().alias("ventas_totales"),
-                    pl.col("sales").mean().alias("venta_promedio_diaria"),
-                    pl.col("fecha_feriado").n_unique().alias("cantidad_feriados"),
-                ]
-            )
-            .sort(["family", "dias_relativo_feriado"])
-        )
-        ventas_previas = ventas_dias_cercanos.filter(
-            pl.col("dias_relativo_feriado") < 0
-        )
+    # Primero se suma cada familia para cada feriado y día relativo.
+    ventas_por_evento = (
+        df_feriados.join(ventana_feriados, on="date", how="inner")
+        .group_by(["fecha_feriado", "family", "dias_relativo_feriado"])
+        .agg(pl.col("sales").sum().alias("ventas_familia_evento"))
+    )
 
-        ventas_posteriores = ventas_dias_cercanos.filter(
-            pl.col("dias_relativo_feriado") > 0
-        )
-        print("\nEjemplo de ventas previas a feriado")
-
-        for row in ventas_previas.head(10).iter_rows(named=True):
-            print(
-                f"{row['family']} | Día {row['dias_relativo_feriado']:+d}: ${row['venta_promedio_diaria']:,.2f} promedio"
-            )
-
-        print("\nEjemplo de ventas posteriores a feriado")
-
-        for row in ventas_posteriores.head(10).iter_rows(named=True):
-            print(
-                f"{row['family']} | Día {row['dias_relativo_feriado']:+d}: ${row['venta_promedio_diaria']:,.2f} promedio"
-            )
-
-        resultados["ventas_ventana_feriados"] = ventas_dias_cercanos.to_dicts()
-
-        resultados["ventas_previas_feriados"] = ventas_previas.to_dicts()
-
-        resultados["ventas_posteriores_feriados"] = ventas_posteriores.to_dicts()
-
-    else:
-        print("No se encontraron feriados nacionales")
-
-    # 2.3 Sensibilidad a feriados
-    print("\n2.3 FAMILIAS MAS SENSIBLES")
-    print("-" * 60)
-
-    sensibilidad_familias = (
-        df_feriados.group_by("family")
+    # Después se resume el comportamiento promedio entre todos los feriados.
+    ventas_dias_cercanos = (
+        ventas_por_evento.group_by(["family", "dias_relativo_feriado"])
         .agg(
             [
-                pl.col("sales")
+                pl.col("ventas_familia_evento").sum().alias("ventas_totales"),
+                pl.col("ventas_familia_evento")
+                .mean()
+                .alias("venta_promedio_por_feriado"),
+                pl.col("ventas_familia_evento")
+                .median()
+                .alias("venta_mediana_por_feriado"),
+                pl.col("fecha_feriado").n_unique().alias("cantidad_feriados"),
+            ]
+        )
+        .sort(["family", "dias_relativo_feriado"])
+    )
+
+    print("\n2.2 VENTAS TRES DÍAS ANTES Y DESPUÉS")
+    for row in ventas_dias_cercanos.head(10).iter_rows(named=True):
+        print(
+            f"{row['family']} | día {row['dias_relativo_feriado']:+d}: "
+            f"promedio {row['venta_promedio_por_feriado']:,.2f}"
+        )
+
+    # 2.3 Sensibilidad por familia usando volúmenes diarios por familia.
+    ventas_diarias_familia = df_feriados.group_by(
+        ["date", "family", "es_feriado_nacional"]
+    ).agg(pl.col("sales").sum().alias("ventas_diarias_familia"))
+
+    sensibilidad_familias = (
+        ventas_diarias_familia.group_by("family")
+        .agg(
+            [
+                pl.col("ventas_diarias_familia")
                 .filter(pl.col("es_feriado_nacional"))
                 .mean()
-                .alias("venta_promedio_feriado"),
-                pl.col("sales")
+                .alias("venta_promedio_diaria_feriado"),
+                pl.col("ventas_diarias_familia")
                 .filter(~pl.col("es_feriado_nacional"))
                 .mean()
-                .alias("venta_promedio_normal"),
-                pl.col("sales")
+                .alias("venta_promedio_diaria_normal"),
+                pl.col("date")
                 .filter(pl.col("es_feriado_nacional"))
-                .sum()
-                .alias("ventas_totales_feriado"),
+                .n_unique()
+                .alias("dias_feriado"),
+                pl.col("date")
+                .filter(~pl.col("es_feriado_nacional"))
+                .n_unique()
+                .alias("dias_normales"),
             ]
         )
         .with_columns(
             pl.when(
-                pl.col("venta_promedio_normal").is_not_null()
-                & (pl.col("venta_promedio_normal") != 0)
-                & pl.col("venta_promedio_feriado").is_not_null()
+                pl.col("venta_promedio_diaria_feriado").is_not_null()
+                & pl.col("venta_promedio_diaria_normal").is_not_null()
+                & (pl.col("venta_promedio_diaria_normal") != 0)
             )
             .then(
-                (pl.col("venta_promedio_feriado") - pl.col("venta_promedio_normal"))
-                / pl.col("venta_promedio_normal")
+                (
+                    pl.col("venta_promedio_diaria_feriado")
+                    - pl.col("venta_promedio_diaria_normal")
+                )
+                / pl.col("venta_promedio_diaria_normal")
                 * 100
             )
             .otherwise(None)
@@ -208,43 +207,50 @@ def analisis_feriados():
         .with_columns(pl.col("cambio_porcentual").abs().alias("sensibilidad_absoluta"))
         .sort("sensibilidad_absoluta", descending=True)
     )
-    print("Familias con mayor sensibilidad general:")
-
-    for i, row in enumerate(sensibilidad_familias.head(10).iter_rows(named=True)):
-        print(f"{i + 1}. {row['family']}: {row['cambio_porcentual']:+.2f}%")
 
     familias_impacto_positivo = sensibilidad_familias.filter(
         pl.col("cambio_porcentual") > 0
     ).sort("cambio_porcentual", descending=True)
-
     familias_impacto_negativo = sensibilidad_familias.filter(
         pl.col("cambio_porcentual") < 0
     ).sort("cambio_porcentual")
 
-    print("\nFamilias más beneficiadas por los feriados:")
+    print("\n2.3 FAMILIAS MÁS SENSIBLES")
+    for i, row in enumerate(
+        sensibilidad_familias.head(10).iter_rows(named=True), start=1
+    ):
+        print(f"{i}. {row['family']}: {row['cambio_porcentual']:+.2f}%")
 
-    for i, row in enumerate(familias_impacto_positivo.head(5).iter_rows(named=True)):
-        print(f"{i + 1}. {row['family']}: {row['cambio_porcentual']:+.2f}%")
+    archivos = {
+        "feriado_vs_normal": guardar_resultado(
+            ventas_feriado_normal, "feriados_vs_dias_normales.parquet"
+        ),
+        "ventana_feriados": guardar_resultado(
+            ventas_dias_cercanos, "feriados_ventana_tres_dias.parquet"
+        ),
+        "sensibilidad_familias": guardar_resultado(
+            sensibilidad_familias, "feriados_sensibilidad_familias.parquet"
+        ),
+    }
 
-    print("\nFamilias más afectadas negativamente:")
+    return {
+        "estado": "ok",
+        "archivos": {nombre: str(ruta) for nombre, ruta in archivos.items()},
+        "cantidad_feriados_nacionales": len(fechas_feriado),
+        "cambio_porcentual_general": cambio_porcentual_general,
+        "familia_mayor_sensibilidad": (
+            sensibilidad_familias.get_column("family")[0]
+            if sensibilidad_familias.height > 0
+            else None
+        ),
+        "familias_impacto_positivo": familias_impacto_positivo.height,
+        "familias_impacto_negativo": familias_impacto_negativo.height,
+    }
 
-    for i, row in enumerate(familias_impacto_negativo.head(5).iter_rows(named=True)):
-        print(f"{i + 1}. {row['family']}: {row['cambio_porcentual']:+.2f}%")
 
-    print(sensibilidad_familias.sort("cambio_porcentual"))
-
-    resultados["sensibilidad_familias_feriados"] = sensibilidad_familias.to_dicts()
-
-    resultados["familias_impacto_positivo"] = familias_impacto_positivo.head(
-        10
-    ).to_dicts()
-
-    resultados["familias_impacto_negativo"] = familias_impacto_negativo.head(
-        10
-    ).to_dicts()
-
-    return resultados
+def ejecutar_feriados():
+    return analisis_feriados()
 
 
 if __name__ == "__main__":
-    analisis_feriados()
+    ejecutar_feriados()
