@@ -1,0 +1,166 @@
+name: Disparar pipeline Favorita
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - manifest.json
+    workflow_dispatch:
+
+  permissions:
+    id-token: write
+    contents: read
+
+  concurrency:
+    group: favorita-pipeline
+    cancel-in-progress: false
+
+  jobs:
+    ejecutar-pipeline:
+      name: Encender VM, sincronizar código y disparar DAG
+      runs-on: ubuntu-latest
+      timeout-minutes: 15
+
+      steps:
+        - name: Iniciar sesión en Azure
+          uses: azure/login@v3
+          with:
+            client-id: ${{ secrets.AZURE_CLIENT_ID }}
+            tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+            subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+        - name: Encender VM
+          env:
+            AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+            AZURE_VM_NAME: ${{ vars.AZURE_VM_NAME }}
+          run: |
+            set -euo pipefail
+
+            az vm start \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$AZURE_VM_NAME"
+
+        - name: Configurar SSH
+          env:
+            SSH_PRIVATE_KEY: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+            SSH_KNOWN_HOSTS: ${{ secrets.VM_SSH_KNOWN_HOSTS }}
+          run: |
+            set -euo pipefail
+
+            install -m 700 -d "$HOME/.ssh"
+
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+            chmod 600 "$HOME/.ssh/known_hosts"
+
+        - name: Esperar conexión SSH
+          env:
+            VM_HOST: ${{ vars.VM_HOST}}
+          run: |
+            set -euo pipefail
+
+            for intento in $(seq 1 36); do
+              if timeout 5 bash -c "<dev/tcp/${VM_HOST}/22" 2>/dev/null; then
+                echo "La VM ya acepta conexiones SSH."
+                exit 0
+              fi
+
+              echo "Esperando SSH... intento ${intento}/36"
+              sleep 10
+            done
+
+            echo "La VM no habilitó SSH dentro del tiempo esperado."
+            exit 1
+        - name: Sincronizar proyecto e iniciar pipeline
+          env:
+            VM_HOST: ${{ vars.VM_HOST}}
+            VM_USER: ${{ vars.VM_USER}}
+            RUN_ID: github__${{ github.run_id }}__${{ github.run_attempt }}
+            COMMIT_SHA: ${{ github.sha }}
+            GITHUB_ACTOR_NAME: ${{ github.actor }}
+          run: |
+            set -euo pipefail
+
+            ssh -i "$HOME/.ssh/id_ed25519" -o BatchMode=yes -o IdentitiesOnly=yes "${VM_USER}@${VM_HOST}" "bash -s -- '$RUN_ID' '$COMMIT_SHA' '$GITHUB_ACTOR_NAME'" << 'REMOTE'
+
+            set -euo pipefail
+
+            RUN_ID="$1"
+            COMMIT_SHA="$2"
+            ACTOR="$3"
+
+            PROYECTO="/opt/proyecto-analisis"
+            AIRFLOW_HOME="$PROYECTO/airflow_home"
+
+            cd "$PROYECTO"
+
+            if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+              echo "Hay cambios locales en archivos controlados por Git."
+              echo "El workflow no los sobrescribirá."
+              git status --short
+              exit 1
+            fi
+
+            git fetch origin main
+            git switch main
+            git pull --ff-only origin main
+
+            source "$PROYECTO/.venv/bin/activate"
+
+            export AIRFLOW_HOME
+            export AIRFLOW__CORE__DAGS_FOLDER="$PROYECTO/dags"
+            export AIRFLOW__CORE__LOAD_EXAMPLES=False
+
+            mkdir -p "$AIRFLOW_HOME"
+
+            if pgrep -f "[a]irflow.*scheduler" >/dev/null; then
+              echo "Airflow ya se encuentra en ejecución."
+            else
+              echo "Iniciando Airflow desde el entorno virtual..."
+
+              nohup "$PROYECTO/scripts/setup/iniciar_airflow.sh" \
+                > "$AIRFLOW_HOME/github_actions_standalone.log" \
+                2>&1 < /dev/null &
+
+              sleep 5
+            fi
+
+            DAG_DISPONIBLE=false
+
+            for intento in ($seq 1 36); do
+              if airflow db check >/dev/null 2>$1 \
+                && airflow dags list 2>/dev/null \
+                  | grep -q "favorita_pipeline"; then
+                  DAG_DISPONIBLE=true
+                  break
+              fi
+
+              echo "Esperando a Airflow... intento ${intento}/36"
+              sleep 5
+
+            done
+
+            if [[ "$DAG_DISPONIBLE" != "true"]]; then
+              echo "Airflow no pudo cargar favorita_pipeline."
+              echo "Errores de importación:"
+              airflow dags list-import-errors || true
+              echo "Últimas líneas del log:"
+              tail -n 100 \
+                "$AIRFLOW_HOME/github_actions_standalone.log" \
+                || true
+              exit 1
+            fi
+
+            airflow dags unpause favorita_pipeline
+
+          CONF=$(printf '{"commit" : "%s", "actor" : "%s", "source" : "github-actions"}' "$COMMIT_SHA" "$ACTOR")
+
+          airflow dags trigger favorita_pipeline --run-id "$RUN_ID" --conf "$CONF"
+
+          echo "Pipeline disparado correctamente."
+          echo "run_id=$RUN_ID"
+          REMOTE
+
