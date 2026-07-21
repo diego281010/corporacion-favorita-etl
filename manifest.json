@@ -1,6 +1,6 @@
 {
-	"dataset_version" : "1.0.1",
+	"dataset_version" : "1.0.2",
 	"last_update" : "2026-07-20",
-	"description" : "Versión inicial del dataset para el pipeline ETL de Corporación Favorita"
+	"description" : "Versión prueba del dataset para el pipeline ETL de Corporación Favorita"
 }
 
