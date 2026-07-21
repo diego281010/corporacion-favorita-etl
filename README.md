@@ -208,7 +208,7 @@ Se configura el grupo de recursos, el nombre de la VM, la región, la imagen (**
 ![Datos básicos 4](docs/img/Paso7_d.png)
 
 **Paso 8: Discos**
-No se modificó la configuración por defecto de discos.
+Se modificó la configuración por defecto de discos. Cambiando el tipo de disco a un disco de menor calidad pero que para el proyecto era más que suficiente.
 
 ![Discos 1](docs/img/Paso8_a.png)
 ![Discos 2](docs/img/Paso8_b.png)
@@ -223,6 +223,7 @@ No se modificó la configuración por defecto de redes. En Administración se ha
 
 **Paso 10: Revisar y crear**
 Se revisan todas las especificaciones configuradas antes de confirmar la creación de la máquina virtual.
+
 ![Revisión final](docs/img/Paso10.png)
 
 ### 8.1 Instalación y arranque de Airflow
@@ -234,16 +235,35 @@ Una vez creada la VM y con acceso por SSH, se instala Airflow dentro de un entor
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 2. Instalar dependencias del proyecto + Airflow 3.3.0 (usa el archivo de constraints oficial)
+# 2. Instalar las librearías desde requirements.txt
+pip install -r requirements.txt
+
+# 3. Instalar dependencias del proyecto + Airflow 3.3.0 (usa el archivo de constraints oficial)
 scripts/setup/instalar_airflow.sh
 
-# 3. Levantar Airflow en modo standalone (webserver + scheduler)
+# 4. Levantar Airflow en modo standalone (webserver + scheduler)
 scripts/setup/iniciar_airflow.sh
 ```
 
 `iniciar_airflow.sh` configura `AIRFLOW_HOME` dentro del proyecto y apunta `AIRFLOW__CORE__DAGS_FOLDER` a la carpeta `dags/` del repo, para que Airflow detecte automáticamente `favorita_pipeline`.
+
+Esto evita tener que ejecutar varios comandos cada que se quiere iniciar apache airflow
 ---
 
 ## 9. Conclusiones y recomendaciones
+### Conclusiones
+1. Se logró construir un pipeline ETL completo, desde CSV hasta PostgreSQL junto con visualización en Power BI.
+2. Se aprovechó bastante el uso de la librería de polars y su rendimiento frente a pandas debido al dataset de un poco más de 3 millones de registros
+3. Airflow permitió controlar el flujo y ordenarlo, separando tanto la extracción como la limpieza, eda y eda profundo como la carga a su vez evitando tener que activar los scripts de python uno por uno
+4. La limpieza de datos fue importante, debido a que oil.csv no tenía el calendario completo y se eliminaron nulos
+5. La modularización del proyecto ayudó al mantenimiento y al control del flujo y control de errores
+6. Las buenas prácticas de desarrollo evitaron problemas a largo plazo, cosas como usar un entorno virtual `.env`o `.gitignore` y no subir los datasets al repositorio
+7. El uso de Azure permitió asegurar un entorno de despliegue aunque con pequeñas limitaciones de costo
+8. La automatización del código con Github Actions permitió la facilidad de probar todo el ETL sin necesidad de realizar demasiados pasos
+### Recomendaciones
+1. Contenerizar el proyecto con Docker para levantar Airflow, PostgreSQL y dependencias más rápido
+2. Documentar errores comunes como problemas de conexión SSH, PostgreSQL, túneles, dependencias o simplemente errores de ser humano
+3. Agregar backups de la base de datos por si se elimina accidentalmente la información procesada
+4. Automatizar las pruebas con GitHub Actions para revisar la estructura del código o ejecutar pruebas antes de que se haga merge a la rama principal
 
-> Se completará al finalizar el proyecto
+---
