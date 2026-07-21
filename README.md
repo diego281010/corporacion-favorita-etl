@@ -160,7 +160,11 @@ La tabla `consolidado` (3,000,888 filas, 19 columnas) tomó 20.05 s de los 20.68
 
 ## 7. Captura del dashboard de Power BI
 
-> Pendiente de implementación
+El dashboard está publicado en Power BI Service y puede visualizarse en el siguiente enlace:
+
+🔗 [Ver dashboard en Power BI Service](https://app.powerbi.com/view?r=eyJrIjoiMWU4MDEyNDUtZjZmNC00YzIxLWFlMjgtYmQ4ODQ0Y2Q3MTViIiwidCI6IjY4MmE0ZTZhLWE3N2YtNDk1OC1hM2FjLTllMjY2ZDE4YWEzNyIsImMiOjR9)
+
+![Dashboard Power BI](./images/dashboard_PowerBI.PNG)
 
 ---
 
