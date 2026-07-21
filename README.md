@@ -164,7 +164,7 @@ El dashboard está publicado en Power BI Service y puede visualizarse en el sigu
 
 🔗 [Ver dashboard en Power BI Service](https://app.powerbi.com/view?r=eyJrIjoiMWU4MDEyNDUtZjZmNC00YzIxLWFlMjgtYmQ4ODQ0Y2Q3MTViIiwidCI6IjY4MmE0ZTZhLWE3N2YtNDk1OC1hM2FjLTllMjY2ZDE4YWEzNyIsImMiOjR9)
 
-![Dashboard Power BI](./images/dashboard_PowerBI.PNG)
+![Dashboard Power BI](docs/img/dashboard_PowerBI.PNG)
 
 ---
 
